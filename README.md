@@ -1,2 +1,2 @@
-# game-2
+# TinyFootballArena
 This is a big game :)
