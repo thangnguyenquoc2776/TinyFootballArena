@@ -1,0 +1,3 @@
+D:/SDL2_Project/TinyFootballArena/CMakeFiles/TinyFootballArena.dir
+D:/SDL2_Project/TinyFootballArena/CMakeFiles/edit_cache.dir
+D:/SDL2_Project/TinyFootballArena/CMakeFiles/rebuild_cache.dir

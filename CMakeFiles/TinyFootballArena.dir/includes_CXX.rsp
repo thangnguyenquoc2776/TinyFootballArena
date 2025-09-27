@@ -1,0 +1,1 @@
+-I"C:/mingw_dev_libs/SDL2/x86_64-w64-mingw32/include/SDL2" -I"C:/mingw_dev_libs/SDL2_Image/x86_64-w64-mingw32/include/SDL2" -I"C:/mingw_dev_libs/SDL2_Font/x86_64-w64-mingw32/include/SDL2" -I"C:/mingw_dev_libs/SDL2_Mixer/x86_64-w64-mingw32/include/SDL2" -ID:/SDL2_Project/TinyFootballArena/src

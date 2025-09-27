@@ -1,0 +1,37 @@
+{
+  "window": { "w": 1280, "h": 720, "vsync": true },
+
+  "world": { "meters_per_px": 0.025, "pitch_m": [48, 27] },
+
+  "camera": { "deadzone_ratio": 0.3, "lerp": 0.1 },
+
+  "ball": { "r_m": 0.22, "m": 0.43, "drag": 0.8, "e_wall": 0.5 },
+
+  "player": {
+    "r_m": 0.35,
+    "m": 70,
+    "vmax": 6.0,
+    "accel": 25.0,
+    "drag": 2.0,
+    "e_wall": 0.05
+  },
+
+  "gk": { "m": 75, "vmax": 5.0, "accel": 20.0, "front_offset_m": 0.8 },
+
+  "kick": { "impulse_min": 2.8, "impulse_max": 3.6, "cooldown": 0.25 },
+
+  "tackle": {
+    "dash_speed": 8.0,
+    "duration": 0.25,
+    "cooldown": 1.2,
+    "intercept_slack_m": 0.1,
+    "dislodge_speed": 7.0
+  },
+
+  "match": {
+    "halves": 2,
+    "half_seconds": 120,
+    "goal_freeze": 2.0,
+    "kickoff_lock": 1.0
+  }
+}

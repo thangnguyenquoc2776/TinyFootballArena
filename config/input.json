@@ -1,0 +1,19 @@
+{
+  "p1": {
+    "up": "W",
+    "down": "S",
+    "left": "A",
+    "right": "D",
+    "shoot": "J",
+    "slide": "K"
+  },
+
+  "p2": {
+    "up": "UP",
+    "down": "DOWN",
+    "left": "LEFT",
+    "right": "RIGHT",
+    "shoot": "RCTRL",
+    "slide": "RSHIFT"
+  }
+}
