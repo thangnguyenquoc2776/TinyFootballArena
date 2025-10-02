@@ -11,8 +11,8 @@ struct Config {
     float meters_per_px = 0.025f;
     float pixel_per_meter = 40.0f; // 1/0.025 = 40
     // Kích thước sân (tính bằng pixel)
-    int fieldWidth = 1920;
-    int fieldHeight = 1080;
+    int fieldWidth = 1280;
+    int fieldHeight = 720;
     // Camera
     float cameraDeadzoneRatio = 0.3f;
     float cameraLerp = 0.1f;
