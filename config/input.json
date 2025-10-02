@@ -5,7 +5,8 @@
     "left": "A",
     "right": "D",
     "shoot": "J",
-    "slide": "K"
+    "slide": "K",
+    "switchGK": "G" // thêm nút đổi sang GK cho Player 1
   },
 
   "p2": {
@@ -14,6 +15,7 @@
     "left": "LEFT",
     "right": "RIGHT",
     "shoot": "RCTRL",
-    "slide": "RSHIFT"
+    "slide": "RSHIFT",
+    "switchGK": "P" // ví dụ chọn Enter cho Player 2
   }
 }

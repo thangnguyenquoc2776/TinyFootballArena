@@ -52,6 +52,18 @@ void MatchScene::init(const Config& cfg, SDL_Renderer* renderer, HUD* hud_){
     gk2.id=4; gk2.radius=cfg.gkRadius; gk2.mass=cfg.gkMass; gk2.drag=cfg.gkDrag;
     gk2.e_wall=cfg.gkElasticityWall; gk2.accel=cfg.gkAccel; gk2.vmax=cfg.gkMaxSpeed;
 
+    player1.isGoalkeeper = false;
+    player2.isGoalkeeper = false;
+    gk1.isGoalkeeper = true;
+    gk2.isGoalkeeper = true;
+
+    // mặc định 2 cầu thủ thường được điều khiển
+    player1.isControlled = true;
+    player2.isControlled = true;
+    gk1.isControlled = false;
+    gk2.isControlled = false;
+
+
     // Goals & spawns
     goals.init(fieldW, fieldH, 9.0f*40.0f/3.0f, 8.0f);
     initPosBall = Vec2(fieldW*0.5f, centerY);
@@ -202,21 +214,80 @@ void MatchScene::update(float dt){
         return;
     }
 
+
+
+
     // Input & actions
     player1.applyInput(dt);
     player1.updateAnim(dt);
     player2.applyInput(dt);
     player2.updateAnim(dt);   
 
+
+    // Sau player1.applyInput(dt), player2.applyInput(dt)
+
+    if (player1.in.switchGK) {
+        player1.isControlled = !player1.isControlled;
+        gk1.isControlled     = !gk1.isControlled;
+    }
+
+    if (player2.in.switchGK) {
+        player2.isControlled = !player2.isControlled;
+        gk2.isControlled     = !gk2.isControlled;
+    }
+        
+
     bool shot1 = false, shot2 = false;
     if (player1.in.shoot) shot1 = player1.tryShoot(ball);
-    if (player1.in.slide) player1.trySlide(ball, dt);
     if (player2.in.shoot) shot2 = player2.tryShoot(ball);
     if (shot1 || shot2) pickupCooldown = std::max(pickupCooldown, 0.22f);
 
     // Slide
     if (player1.in.slide) player1.trySlide(ball, dt);
     if (player2.in.slide) player2.trySlide(ball, dt);
+
+
+    // === GK CONTROL ===
+    static float gk1Hold = 0.0f, gk2Hold = 0.0f;
+
+    // Nếu người chơi đang điều khiển GK1
+    if (gk1.isControlled) {
+        gk1.applyInput(dt);
+
+        if (gk1.in.shoot) {
+            // Nếu GK đang giữ bóng → phất lên
+            if (ball.owner == &gk1) {
+                PossessionSystem::updateKeeperBallLogic(ball, gk1, gk1Hold, dt);
+            } else {
+                gk1.tryShoot(ball); // đá phá
+            }
+        }
+        if (gk1.in.slide) gk1.trySlide(ball, dt);
+
+        gk1.updateAnim(dt);
+    }
+
+    // Nếu người chơi đang điều khiển GK2
+    if (gk2.isControlled) {
+        gk2.applyInput(dt);
+
+        if (gk2.in.shoot) {
+            if (ball.owner == &gk2) {
+                PossessionSystem::updateKeeperBallLogic(ball, gk2, gk2Hold, dt);
+            } else {
+                gk2.tryShoot(ball);
+            }
+        }
+        if (gk2.in.slide) gk2.trySlide(ball, dt);
+
+        gk2.updateAnim(dt);
+    }
+
+    // Nếu GK đang giữ bóng nhưng người chơi KHÔNG điều khiển → vẫn auto phất sau 6s
+    PossessionSystem::updateKeeperBallLogic(ball, gk1, gk1Hold, dt);
+    PossessionSystem::updateKeeperBallLogic(ball, gk2, gk2Hold, dt);
+
+
 
         // === DRIBBLE ASSIST (TRƯỚC PHYSICS) ===
     // === DRIBBLE ASSIST (TRƯỚC PHYSICS) ===
