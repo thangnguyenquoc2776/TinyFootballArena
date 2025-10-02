@@ -1,6 +1,7 @@
 #include "scene/MatchScene.hpp"
 #include "ui/HUD.hpp"
-#include "systems/DribbleSystem.hpp"
+
+// Subsystems còn dùng
 #include "systems/KeeperSystem.hpp"
 #include "systems/PossessionSystem.hpp"
 
@@ -13,9 +14,8 @@
 static inline float clampf(float v, float lo, float hi){ return (v<lo)?lo:((v>hi)?hi:v); }
 static const float PI = 3.14159265358979323846f;
 
-// ==== Subsystems ====
-static DribbleSystem gDribble;   // rê theo nhịp (đã có idle-settle trong DribbleSystem.cpp mới)
-static KeeperSystem  gKeeper;    // AI thủ môn
+// ===== Subsystem singletons =====
+static KeeperSystem gKeeper;
 
 MatchScene::~MatchScene(){
     if (pitchTex)   { SDL_DestroyTexture(pitchTex);   pitchTex   = nullptr; }
@@ -78,37 +78,21 @@ void MatchScene::init(const Config& cfg, SDL_Renderer* renderer, HUD* hud_){
     crowdMusic=Mix_LoadMUS("assets/audio/crowd_loop.ogg");
     if (crowdMusic){ Mix_VolumeMusic(MIX_MAX_VOLUME/2); Mix_PlayMusic(crowdMusic,-1); }
 
-    // reset subsystems
-    gDribble.reset();
     gKeeper.reset();
-
-    DribbleSystem::Params dp;
-    dp.smoothTimeMove = 0.14f;
-    dp.smoothTimeStop = 0.20f;
-    dp.turnRate       = 1.6f;     // xoay hiền → đỡ giật
-    dp.extraLead      = 12.0f;    // >>> xa chân hơn
-    dp.leadSpeedK     = 0.030f;   // chạy nhanh → lead tăng thêm
-    dp.lateralBias    = 4.5f;     // lệch chân thuận
-    dp.targetDeadRad  = 5.0f;
-
-    dp.maxSpeed       = 5.2f * 40.0f;
-    dp.minSpeed       = 1.0f * 40.0f;
-    dp.carryFactor    = 0.30f;
-    dp.loseDistance   = 48.0f;
-    dp.idleDamping    = 9.0f;
-    gDribble.setParams(dp);
-
-
-
 }
 
 void MatchScene::update(float dt){
+    // cooldown chống nhặt lại ngay sau khi vừa sút/phát bóng
     static float pickupCooldown = 0.f;
     pickupCooldown = std::max(0.0f, pickupCooldown - dt);
 
+    // “vòng cấm” cho KeeperSystem & possession
     const float boxDepth = fieldW * 0.18f;
 
-    // --- State machine (match flow) ---
+    // giảm timer dấu vết sút của bóng (nếu Ball có biến này)
+    if (ball.justKicked > 0.0f) ball.justKicked = std::max(0.0f, ball.justKicked - dt);
+
+    // --- State machine ---
     auto resetPositions = [&](){
         ball.owner=nullptr; pickupCooldown=0.f;
         ball.tf.pos=initPosBall; ball.tf.vel=Vec2(0,0);
@@ -151,43 +135,56 @@ void MatchScene::update(float dt){
         return;
     }
 
-        // Input & actions
+    // === INPUT ===
     player1.applyInput(dt);
     player2.applyInput(dt);
 
-    bool shot1 = false, shot2 = false;
+    // --- SHOOT theo đề nghị (lấy cooldown nhặt lại) ---
+    bool shot1=false, shot2=false;
     if (player1.in.shoot) shot1 = player1.tryShoot(ball);
-    if (player1.in.slide) player1.trySlide(ball, dt);
     if (player2.in.shoot) shot2 = player2.tryShoot(ball);
+    if (shot1 || shot2) pickupCooldown = std::max(pickupCooldown, 0.22f);
+
+    // Slide
+    if (player1.in.slide) player1.trySlide(ball, dt);
     if (player2.in.slide) player2.trySlide(ball, dt);
 
-    // Nếu vừa có cú sút -> khóa nhặt lại ngắn (tránh “dính chân”)
-    if (shot1 || shot2) {
-        pickupCooldown = std::max(pickupCooldown, 0.22f);
+        // === DRIBBLE ASSIST (TRƯỚC PHYSICS) ===
+    // === DRIBBLE ASSIST (TRƯỚC PHYSICS) ===
+    // Nếu có owner thì chỉ update cho owner
+    if (ball.owner == &player1) {
+        player1.assistDribble(ball, dt);
+    }
+    else if (ball.owner == &player2) {
+        player2.assistDribble(ball, dt);
+    }
+    else {
+        // Bóng tự do → cho cả 2 thử “hỗ trợ kéo bóng”
+        player1.assistDribble(ball, dt);
+        player2.assistDribble(ball, dt);
     }
 
+    // (GK không rê)
 
+    // === KEEPER AI ===
+    gKeeper.updatePair(ball, gk1, gk2, player1, player2,
+                       fieldW, fieldH, centerY, dt, pickupCooldown);
 
-    if (!ball.owner){ player1.assistDribble(ball, dt); player2.assistDribble(ball, dt); }
-
-    // GK AI
-    gKeeper.updatePair(ball, gk1, gk2, player1, player2, fieldW, fieldH, centerY, dt, pickupCooldown);
-
-    // Possession rules (nhặt bóng hợp lệ)
+    // === POSSESSION RULES ===
     PossessionSystem::tryTakeAll(ball, player1, player2, gk1, gk2,
-                                fieldW, boxDepth, pickupCooldown, dt);
+                                 fieldW, boxDepth, pickupCooldown, dt);
 
+    // === PHYSICS ===
+    // Khi đang sở hữu, bỏ bóng khỏi physics để tránh “kéo co” với hệ rê
+    std::vector<Entity*> ents;
+    ents.reserve(5);
+    if (ball.owner == nullptr) ents.push_back(&ball);
+    ents.push_back(&player1); ents.push_back(&player2);
+    ents.push_back(&gk1);     ents.push_back(&gk2);
 
-    if (ball.owner==&player1 || ball.owner==&player2) {
-        gDribble.update(ball, *ball.owner, dt);   // ĐẶT TRƯỚC physics
-    }
-    std::vector<Entity*> ents = { &player1, &player2, &gk1, &gk2 };
-    if (!ball.owner) ents.insert(ents.begin(), &ball);  // bóng có chủ thì KHÔNG đưa vào physics
     physics.step(dt, ents, goals, fieldW, fieldH);
 
-
-
-    // Goals (chỉ tính khi bóng tự do)
+    // === GOALS === (chỉ tính khi bóng tự do)
     int gs = (ball.owner==nullptr) ? goals.checkGoal(ball) : 0;
     if (gs!=0){
         if (gs==1) goals.scoreLeft  +=1;
@@ -207,28 +204,33 @@ void MatchScene::render(SDL_Renderer* renderer, bool paused){
     const float sx=(float)sw/(float)fieldW, sy=(float)sh/(float)fieldH;
     auto rectFor=[&](float cx,float cy,float r){ SDL_Rect d; d.x=(int)((cx-r)*sx); d.y=(int)((cy-r)*sy); d.w=(int)((r*2)*sx); d.h=(int)((r*2)*sy); return d; };
 
+    // Ball
     SDL_Rect dst = rectFor(ball.tf.pos.x, ball.tf.pos.y, ball.radius);
     if (ballTex) SDL_RenderCopy(renderer,ballTex,nullptr,&dst); else { SDL_SetRenderDrawColor(renderer,255,255,255,255); SDL_RenderFillRect(renderer,&dst); }
 
+    // Players
     dst = rectFor(player1.tf.pos.x, player1.tf.pos.y, player1.radius);
     if (p1Tex) SDL_RenderCopy(renderer,p1Tex,nullptr,&dst); else { SDL_SetRenderDrawColor(renderer,0,0,255,255); SDL_RenderFillRect(renderer,&dst); }
 
     dst = rectFor(player2.tf.pos.x, player2.tf.pos.y, player2.radius);
     if (p2Tex) SDL_RenderCopy(renderer,p2Tex,nullptr,&dst); else { SDL_SetRenderDrawColor(renderer,255,0,0,255); SDL_RenderFillRect(renderer,&dst); }
 
+    // GKs
     dst = rectFor(gk1.tf.pos.x, gk1.tf.pos.y, gk1.radius);
     if (gkTex) SDL_RenderCopy(renderer,gkTex,nullptr,&dst); else { SDL_SetRenderDrawColor(renderer,100,100,100,255); SDL_RenderFillRect(renderer,&dst); }
 
     dst = rectFor(gk2.tf.pos.x, gk2.tf.pos.y, gk2.radius);
     if (gkTex) SDL_RenderCopy(renderer,gkTex,nullptr,&dst); else { SDL_SetRenderDrawColor(renderer,100,100,100,255); SDL_RenderFillRect(renderer,&dst); }
 
+    // Goal posts
     SDL_SetRenderDrawColor(renderer,255,255,255,255);
     auto drawPost=[&](const Post& p){ SDL_Rect pr=rectFor(p.pos.x,p.pos.y,p.radius); SDL_RenderFillRect(renderer,&pr); };
     drawPost(goals.leftPosts[0]); drawPost(goals.leftPosts[1]);
     drawPost(goals.rightPosts[0]); drawPost(goals.rightPosts[1]);
 
+    // HUD
     int m=(int)timeRemaining/60, s=(int)timeRemaining%60;
-    char t[6]; std::sprintf(t,"%02d:%02d",m,s);
+    char t[6];  std::sprintf(t,"%02d:%02d",m,s);
     char sc[16]; std::sprintf(sc,"%d - %d",goals.scoreLeft,goals.scoreRight);
     const char* banner="";
     if (paused) banner="PAUSED";
