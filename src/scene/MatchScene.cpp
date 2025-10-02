@@ -5,6 +5,8 @@
 #include <cmath>
 #include <cstdio>
 #include <algorithm>   // std::max, std::min
+#include "ui/Animation.hpp"
+
 
 // ===== Helpers =====
 static inline float clampf(float v, float lo, float hi) {
@@ -118,11 +120,48 @@ void MatchScene::init(const Config& config, SDL_Renderer* renderer, HUD* hud_) {
     stateTimer    = kickoffLockTime;
 
     // --- Assets ---
-    pitchTex = IMG_LoadTexture(mRenderer, "assets/images/pitch.png");
+    pitchTex = IMG_LoadTexture(mRenderer, "assets/images/pitch2.png");
     ballTex  = IMG_LoadTexture(mRenderer, "assets/images/ball.png");
-    p1Tex    = IMG_LoadTexture(mRenderer, "assets/images/player1.png");
-    p2Tex    = IMG_LoadTexture(mRenderer, "assets/images/player2.png");
+    //p1Tex    = IMG_LoadTexture(mRenderer, "assets/images/player1.png");
+    //p2Tex    = IMG_LoadTexture(mRenderer, "assets/images/player2.png");
     gkTex    = IMG_LoadTexture(mRenderer, "assets/images/gk.png");
+
+
+    auto loadAnim = [&](Animation& anim, std::vector<std::string> files){
+    for (auto& f : files) {
+        SDL_Texture* tex = IMG_LoadTexture(mRenderer, f.c_str());
+        if (tex) anim.frames.push_back(tex);
+    }
+};
+
+    // Player1 idle
+    loadAnim(player1.idle[0], {"assets/images/player1/idle/idle_down.png"});
+    loadAnim(player1.idle[1], {"assets/images/player1/idle/idle_left.png"});
+    loadAnim(player1.idle[2], {"assets/images/player1/idle/idle_right.png"});
+    loadAnim(player1.idle[3], {"assets/images/player1/idle/idle_up.png"});
+
+    // Player1 run (2–3 frames mỗi hướng)
+    loadAnim(player1.run[0], {"assets/images/player1/run/run_down_1.png", "assets/images/player1/run/run_down_2.png"});
+    loadAnim(player1.run[1], {"assets/images/player1/run/run_left_1.png",
+    "assets/images/player1/idle/idle_left.png"});
+    loadAnim(player1.run[2], {"assets/images/player1/run/run_right_1.png",
+    "assets/images/player1/idle/idle_right.png"});
+    loadAnim(player1.run[3], {"assets/images/player1/run/run_up_1.png", "assets/images/player1/run/run_up_2.png"});
+
+
+    // Player2 idle
+    loadAnim(player2.idle[0], {"assets/images/player2/idle/idle_down.png"});
+    loadAnim(player2.idle[1], {"assets/images/player2/idle/idle_left.png"});
+    loadAnim(player2.idle[2], {"assets/images/player2/idle/idle_right.png"});
+    loadAnim(player2.idle[3], {"assets/images/player2/idle/idle_up.png"});
+
+    // Player2 run (2–3 frames mỗi hướng)
+    loadAnim(player2.run[0], {"assets/images/player2/run/run_down_1.png", "assets/images/player2/run/run_down_2.png"});
+    loadAnim(player2.run[1], {"assets/images/player2/run/run_left_1.png",
+    "assets/images/player2/idle/idle_left.png"});
+    loadAnim(player2.run[2], {"assets/images/player2/run/run_right_1.png",
+    "assets/images/player2/idle/idle_right.png"});
+    loadAnim(player2.run[3], {"assets/images/player2/run/run_up_1.png", "assets/images/player2/run/run_up_2.png"});
 
     goalSfx  = Mix_LoadWAV("assets/audio/goal.wav");
     crowdMusic = Mix_LoadMUS("assets/audio/crowd_loop.ogg");
@@ -205,7 +244,11 @@ void MatchScene::update(float dt) {
 
     // --- Inputs for players ---
     player1.applyInput(dt);
+    player1.updateAnim(dt);
+
     player2.applyInput(dt);
+    player2.updateAnim(dt);
+
 
     if (player1.in.shoot) player1.tryShoot(ball);
     if (player1.in.slide) player1.trySlide(ball, dt);
@@ -427,15 +470,39 @@ void MatchScene::render(SDL_Renderer* renderer, bool paused) {
     if (ballTex) SDL_RenderCopy(renderer, ballTex, nullptr, &dst);
     else { SDL_SetRenderDrawColor(renderer, 255,255,255,255); SDL_RenderFillRect(renderer, &dst); }
 
-    // P1
-    dst = rectFor(player1.tf.pos.x, player1.tf.pos.y, player1.radius);
-    if (p1Tex) SDL_RenderCopy(renderer, p1Tex, nullptr, &dst);
-    else { SDL_SetRenderDrawColor(renderer, 0,0,255,255); SDL_RenderFillRect(renderer, &dst); }
+    //! P1
 
-    // P2
+    dst = rectFor(player1.tf.pos.x, player1.tf.pos.y, player1.radius);
+    // Xác định đang idle hay chạy
+    bool moving = (fabs(player1.tf.vel.x) > 1 || fabs(player1.tf.vel.y) > 1);
+    // Lấy texture frame tương ứng
+    SDL_Texture* tex = moving 
+        ? player1.run[player1.dir].getFrame()
+        : player1.idle[player1.dir].getFrame();
+    // Vẽ
+    if (tex) {
+        SDL_RenderCopy(renderer, tex, nullptr, &dst);
+    }
+
+
+
+
+
+    // // P2
+    // dst = rectFor(player2.tf.pos.x, player2.tf.pos.y, player2.radius);
+    // if (p2Tex) SDL_RenderCopy(renderer, p2Tex, nullptr, &dst);
+    // else { SDL_SetRenderDrawColor(renderer, 255,0,0,255); SDL_RenderFillRect(renderer, &dst); }
+    
     dst = rectFor(player2.tf.pos.x, player2.tf.pos.y, player2.radius);
-    if (p2Tex) SDL_RenderCopy(renderer, p2Tex, nullptr, &dst);
-    else { SDL_SetRenderDrawColor(renderer, 255,0,0,255); SDL_RenderFillRect(renderer, &dst); }
+    // Xác định đang idle hay chạy
+    bool moving2 = (fabs(player2.tf.vel.x) > 1 || fabs(player2.tf.vel.y) > 1);
+    // Lấy texture frame tương ứng
+    SDL_Texture* tex2 = moving2
+        ? player2.run[player2.dir].getFrame()
+        : player2.idle[player2.dir].getFrame();
+    // Vẽ
+    if (tex2) {
+        SDL_RenderCopy(renderer, tex2, nullptr, &dst);}
 
     // GK1
     dst = rectFor(gk1.tf.pos.x, gk1.tf.pos.y, gk1.radius);

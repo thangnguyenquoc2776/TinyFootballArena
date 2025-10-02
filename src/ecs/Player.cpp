@@ -2,6 +2,7 @@
 #include "ecs/Ball.hpp"
 #include <cmath>
 #include <algorithm>
+#include "ui/Animation.hpp"
 
 // Giới hạn góc quay hướng nhìn (rad/s) để input 8 hướng không làm “giật”
 static const float MAX_FACE_TURN = 4.0f; // ≈229°/s
@@ -127,3 +128,18 @@ void Player::assistDribble(Ball& ball, float dt) {
         }
     }
 }
+
+void Player::updateAnim(float dt) {
+    // Xác định hướng theo vận tốc
+    if (fabs(tf.vel.x) > fabs(tf.vel.y)) {
+        dir = (tf.vel.x > 0) ? 2 : 1; // right=2, left=1
+    } else if (fabs(tf.vel.y) > 0) {
+        dir = (tf.vel.y > 0) ? 0 : 3; // down=0, up=3
+    }
+
+    // Idle hay chạy?
+    bool moving = (fabs(tf.vel.x) > 1 || fabs(tf.vel.y) > 1);
+    if (moving) run[dir].update(dt);
+    else idle[dir].update(dt);
+}
+

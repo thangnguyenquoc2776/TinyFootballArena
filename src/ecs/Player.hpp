@@ -1,5 +1,7 @@
 #pragma once
 #include "ecs/Entity.hpp"
+#include "ui/Animation.hpp"
+
 
 class Ball;
 
@@ -21,10 +23,18 @@ public:
     bool  tackling = false;
     float tackleTimer = 0.0f;
 
+    // NEW: Animations
+    Animation idle[4];  // idle cho 4 hướng
+    Animation run[4];   // run cho 4 hướng
+    int dir = 0;        // hướng hiện tại (0=down, 1=left, 2=right, 3=up)
+
     Player();
     void applyInput(float dt);
     bool tryShoot(Ball& ball);
     void trySlide(Ball& ball, float dt);
+
+    void updateAnim(float dt);   // <<< thêm dòng này
+
 
     // ✨ THÊM MỚI: khai báo đúng chữ ký
     void assistDribble(Ball& ball, float dt);
