@@ -171,6 +171,7 @@ bool Config::loadFromFile(const std::string& gameConfigFile, const std::string& 
             else if (key == "right") keysP1.right = val;
             else if (key == "shoot") keysP1.shoot = val;
             else if (key == "slide") keysP1.slide = val;
+            else if (key == "switchGK") keysP1.switchGK = val; // <<< THÊM
         } else if (section == "p2") {
             if (key == "up") keysP2.up = val;
             else if (key == "down") keysP2.down = val;
@@ -178,6 +179,7 @@ bool Config::loadFromFile(const std::string& gameConfigFile, const std::string& 
             else if (key == "right") keysP2.right = val;
             else if (key == "shoot") keysP2.shoot = val;
             else if (key == "slide") keysP2.slide = val;
+            else if (key == "switchGK") keysP2.switchGK = val; // <<< THÊM
         }
     }
     fin2.close();

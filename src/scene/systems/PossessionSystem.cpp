@@ -2,9 +2,7 @@
 #include <algorithm>
 #include <cmath>
 
-static inline float clampf(float v, float lo, float hi){
-    return (v < lo) ? lo : (v > hi ? hi : v);
-}
+static inline float clampf(float v,float lo,float hi){return v<lo?lo:(v>hi?hi:v);}
 
 static bool inKeeperBox(const Ball& ball, const Player* gk, float fieldW, float boxDepth){
     bool leftSide = (gk->id == 3);
@@ -13,59 +11,29 @@ static bool inKeeperBox(const Ball& ball, const Player* gk, float fieldW, float 
     return (ball.tf.pos.x >= minX && ball.tf.pos.x <= maxX);
 }
 
-// Keeper bắt bóng nếu trong box + bóng chậm + facing đúng hướng
-static void tryKeeperCatch(Ball& ball, Player* gk, float fieldW, float boxDepth) {
+static void tryTakeOne(Ball& ball, Player* p, float fieldW, float boxDepth, float pickupCooldown){
     if (ball.owner) return;
-    if (!inKeeperBox(ball, gk, fieldW, boxDepth)) return;
 
-    Vec2 toBall = ball.tf.pos - gk->tf.pos;
-    float dist  = toBall.length();
-    if (dist < 1e-4f) return;
-
-    Vec2 fwd = gk->facing.normalized();
-    float cosA = Vec2::dot(toBall * (1.0f / dist), fwd);
-
-    float captureRange = gk->radius + ball.radius + 22.0f;
-    float maxBallSpeed = 3.5f * 40.0f;
-
-    if (cosA > std::cos(70.0f * 3.14159265f / 180.0f) &&
-        dist < captureRange &&
-        ball.tf.vel.length() < maxBallSpeed)
-    {
-        // GK bắt bóng thành công
-        ball.owner = gk;
-        ball.tf.vel = Vec2(0,0);
-    }
-}
-
-// Cho cầu thủ thường tranh bóng
-static void tryTakeOne(Ball& ball, Player* p, float fieldW, float boxDepth,
-                       float pickupCooldown)
-{
-    if (ball.owner) return;
     if (ball.justKicked > 0.0f && p->id == ball.lastKickerId) return;
     if (pickupCooldown > 0.0f) return;
-
-    bool isKeeper = (p->id == 3 || p->id == 4);
-    if (isKeeper) {
-        tryKeeperCatch(ball, p, fieldW, boxDepth);
-        return;
-    }
 
     Vec2 toBall = ball.tf.pos - p->tf.pos;
     float d = toBall.length(); if (d < 1e-4f) return;
 
     Vec2 fwd = p->facing.normalized();
-    float cosA = Vec2::dot(toBall * (1.0f / d), fwd);
+    float cosA = Vec2::dot(toBall * (1.0f/d), fwd);
 
-    float captureRange = p->radius + ball.radius + 16.0f;
-    float maxBallSpeed = 6.0f * 40.0f;
+    bool isKeeper = p->isGoalkeeper;
+    if (isKeeper && !inKeeperBox(ball, p, fieldW, boxDepth)) return;
+
+    float captureRange = p->radius + ball.radius + (isKeeper ? 10.0f : 16.0f);
+    float maxBallSpeed = isKeeper ? (3.5f * 40.0f) : (6.0f * 40.0f);
 
     if (cosA > std::cos(60.0f * 3.14159265f/180.0f) &&
         d < captureRange &&
         ball.tf.vel.length() < maxBallSpeed)
     {
-        ball.owner = p;
+        ball.owner = p; // “ôm bóng” (GK) hay “dắt bóng” (cầu thủ) đều là owner
     }
 }
 
@@ -85,28 +53,33 @@ void tryTakeAll(Ball& ball,
     tryTakeOne(ball, &gk2, fieldW, boxDepth, pickupCooldown);
 }
 
-// --- GK giữ bóng: bấm shoot = phất, sau 6s auto phất ---
-void updateKeeperBallLogic(Ball& ball, Player& gk,
-                           float& keeperHoldTimer, float dt)
+void updateKeeperBallLogic(Ball& ball, Player& gk, float& holdTimer, float dt)
 {
-    if (ball.owner != &gk) { keeperHoldTimer = 0; return; }
+    if (!gk.isGoalkeeper) return;
 
-    keeperHoldTimer += dt;
+    // chỉ khi GK đang giữ bóng
+    if (ball.owner == &gk) {
+        holdTimer += dt;
 
-    // Nếu GK bấm shoot hoặc quá 6s -> phất bóng
-    if (gk.in.shoot || keeperHoldTimer > 6.0f) {
-        Vec2 dir = gk.facing.normalized();
-        if (dir.length() < 1e-6f) dir = Vec2(1,0);
+        // giữ bóng “trước tay”
+        Vec2 aim = gk.facing.normalized(); if (aim.length()<1e-6f) aim=Vec2(1,0);
+        float holdDist = gk.radius + ball.radius + 2.0f;
+        ball.tf.pos = gk.tf.pos + aim * holdDist;
+        ball.tf.vel = Vec2(0,0);
 
-        float kickSpeed = 18.0f * 40.0f;
-        ball.owner = nullptr;
-        ball.tf.vel = dir * kickSpeed;
-        ball.tf.pos = gk.tf.pos + dir * (gk.radius + ball.radius + 4.0f);
-
-        keeperHoldTimer = 0;
-        ball.lastKickerId = gk.id;
-        ball.justKicked = 0.4f;
+        // phất khi bấm shoot hoặc quá thời gian
+        const float AUTO_TIME = 6.0f;
+        if (gk.in.shoot || holdTimer > AUTO_TIME) {
+            holdTimer = 0.0f;
+            ball.owner = nullptr;
+            float kick = 18.0f * 40.0f; // ~18 m/s
+            ball.tf.vel = aim * kick + gk.tf.vel * 0.3f;
+            ball.lastKickerId = gk.id;
+            ball.justKicked   = 0.30f;
+        }
+    } else {
+        holdTimer = 0.0f;
     }
 }
 
-} // namespace PossessionSystem
+} // namespace

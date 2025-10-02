@@ -3,7 +3,7 @@
 
 // Subsystems còn dùng
 #include "systems/KeeperSystem.hpp"
-#include "systems/PossessionSystem.hpp"
+#include "scene/systems/PossessionSystem.hpp"
 
 #include <SDL_image.h>
 #include <SDL_mixer.h>
@@ -161,17 +161,14 @@ void MatchScene::init(const Config& cfg, SDL_Renderer* renderer, HUD* hud_){
 }
 
 void MatchScene::update(float dt){
-    // cooldown chống nhặt lại ngay sau khi vừa sút/phát bóng
+    // === timers & constants ===
     static float pickupCooldown = 0.f;
+    static float gk1Hold = 0.f, gk2Hold = 0.f; // timer giữ bóng của GK
     pickupCooldown = std::max(0.0f, pickupCooldown - dt);
-
-    // “vòng cấm” cho KeeperSystem & possession
     const float boxDepth = fieldW * 0.18f;
-
-    // giảm timer dấu vết sút của bóng (nếu Ball có biến này)
     if (ball.justKicked > 0.0f) ball.justKicked = std::max(0.0f, ball.justKicked - dt);
 
-    // --- State machine ---
+    // --- State machine (nguyên bản) ---
     auto resetPositions = [&](){
         ball.owner=nullptr; pickupCooldown=0.f;
         ball.tf.pos=initPosBall; ball.tf.vel=Vec2(0,0);
@@ -214,117 +211,97 @@ void MatchScene::update(float dt){
         return;
     }
 
+    // ===== 1) SNAPSHOT input gốc (đến từ InputSystem) =====
+    const InputIntent srcP1 = player1.in;
+    const InputIntent srcP2 = player2.in;
 
+    // ===== 2) FLIP quyền điều khiển (mỗi bên độc lập, 1 lần/khung) =====
+    auto canFlipSide = [&](bool left)->bool{
+        Player& p  = left ? player1 : player2;
+        Player& gk = left ? gk1     : gk2;
+        Entity* controlled = p.isControlled ? (Entity*)&p : (Entity*)&gk;
+        // Không cho flip nếu thực thể đang được điều khiển hiện tại đang ôm bóng
+        return !(ball.owner == controlled);
+    };
 
+    if (srcP1.switchGK && canFlipSide(true))  { player1.isControlled = !player1.isControlled; gk1.isControlled = !gk1.isControlled; }
+    if (srcP2.switchGK && canFlipSide(false)) { player2.isControlled = !player2.isControlled; gk2.isControlled = !gk2.isControlled; }
 
-    // Input & actions
-    player1.applyInput(dt);
-    player1.updateAnim(dt);
-    player2.applyInput(dt);
-    player2.updateAnim(dt);   
+    // ===== 3) ROUTE input theo trạng thái sau flip (xóa switchGK để không lan frame) =====
+    auto clearInput = [](InputIntent& in){ in.x=in.y=0; in.shoot=in.slide=in.switchGK=false; };
+    auto copyInput  = [](const InputIntent& src, InputIntent& dst){ dst=src; dst.switchGK=false; };
 
+    if (gk1.isControlled) { copyInput(srcP1, gk1.in); clearInput(player1.in); }
+    else                  { player1.in = srcP1;       clearInput(gk1.in);     }
 
-    // Sau player1.applyInput(dt), player2.applyInput(dt)
+    if (gk2.isControlled) { copyInput(srcP2, gk2.in); clearInput(player2.in); }
+    else                  { player2.in = srcP2;       clearInput(gk2.in);     }
 
-    if (player1.in.switchGK) {
-        player1.isControlled = !player1.isControlled;
-        gk1.isControlled     = !gk1.isControlled;
-    }
+    // ===== 4) APPLY INPUT + ACTION =====
+    bool shot1=false, shot2=false;
 
-    if (player2.in.switchGK) {
-        player2.isControlled = !player2.isControlled;
-        gk2.isControlled     = !gk2.isControlled;
-    }
-        
-
-    bool shot1 = false, shot2 = false;
-    if (player1.in.shoot) shot1 = player1.tryShoot(ball);
-    if (player2.in.shoot) shot2 = player2.tryShoot(ball);
-    if (shot1 || shot2) pickupCooldown = std::max(pickupCooldown, 0.22f);
-
-    // Slide
-    if (player1.in.slide) player1.trySlide(ball, dt);
-    if (player2.in.slide) player2.trySlide(ball, dt);
-
-
-    // === GK CONTROL ===
-    static float gk1Hold = 0.0f, gk2Hold = 0.0f;
-
-    // Nếu người chơi đang điều khiển GK1
+    // Bên trái
     if (gk1.isControlled) {
-        gk1.applyInput(dt);
-
+        gk1.applyInput(dt); gk1.updateAnim(dt);
         if (gk1.in.shoot) {
-            // Nếu GK đang giữ bóng → phất lên
-            if (ball.owner == &gk1) {
-                PossessionSystem::updateKeeperBallLogic(ball, gk1, gk1Hold, dt);
-            } else {
-                gk1.tryShoot(ball); // đá phá
-            }
+            if (ball.owner == &gk1) PossessionSystem::updateKeeperBallLogic(ball, gk1, gk1Hold, dt);
+            else                     shot1 = gk1.tryShoot(ball);
         }
         if (gk1.in.slide) gk1.trySlide(ball, dt);
-
-        gk1.updateAnim(dt);
+    } else {
+        player1.applyInput(dt); player1.updateAnim(dt);
+        if (player1.in.shoot) shot1 = player1.tryShoot(ball);
+        if (player1.in.slide) player1.trySlide(ball, dt);
     }
 
-    // Nếu người chơi đang điều khiển GK2
+    // Bên phải
     if (gk2.isControlled) {
-        gk2.applyInput(dt);
-
+        gk2.applyInput(dt); gk2.updateAnim(dt);
         if (gk2.in.shoot) {
-            if (ball.owner == &gk2) {
-                PossessionSystem::updateKeeperBallLogic(ball, gk2, gk2Hold, dt);
-            } else {
-                gk2.tryShoot(ball);
-            }
+            if (ball.owner == &gk2) PossessionSystem::updateKeeperBallLogic(ball, gk2, gk2Hold, dt);
+            else                     shot2 = gk2.tryShoot(ball);
         }
         if (gk2.in.slide) gk2.trySlide(ball, dt);
-
-        gk2.updateAnim(dt);
+    } else {
+        player2.applyInput(dt); player2.updateAnim(dt);
+        if (player2.in.shoot) shot2 = player2.tryShoot(ball);
+        if (player2.in.slide) player2.trySlide(ball, dt);
     }
 
-    // Nếu GK đang giữ bóng nhưng người chơi KHÔNG điều khiển → vẫn auto phất sau 6s
-    PossessionSystem::updateKeeperBallLogic(ball, gk1, gk1Hold, dt);
-    PossessionSystem::updateKeeperBallLogic(ball, gk2, gk2Hold, dt);
+    if (shot1 || shot2) pickupCooldown = std::max(pickupCooldown, 0.22f);
 
+    // ===== 5) DRIBBLE ASSIST (chỉ cầu thủ thường) =====
+    if      (ball.owner == &player1) player1.assistDribble(ball, dt);
+    else if (ball.owner == &player2) player2.assistDribble(ball, dt);
+    else { player1.assistDribble(ball, dt); player2.assistDribble(ball, dt); }
 
+    // ===== 6) GK AI — không đè GK đang manual =====
+    // Nếu keeper AI của bạn chỉ có updatePair(...), ta dùng snapshot/restore GK đang manual:
+    {
+        Vec2 gk1Pos = gk1.tf.pos, gk1Vel = gk1.tf.vel;
+        Vec2 gk2Pos = gk2.tf.pos, gk2Vel = gk2.tf.vel;
 
-        // === DRIBBLE ASSIST (TRƯỚC PHYSICS) ===
-    // === DRIBBLE ASSIST (TRƯỚC PHYSICS) ===
-    // Nếu có owner thì chỉ update cho owner
-    if (ball.owner == &player1) {
-        player1.assistDribble(ball, dt);
+        // Gọi AI một phát cho đủ logic phối hợp
+        gKeeper.updatePair(ball, gk1, gk2, player1, player2,
+                           fieldW, fieldH, centerY, dt, pickupCooldown);
+
+        // Khóa lại GK đang manual (AI không được thay đổi)
+        if (gk1.isControlled) { gk1.tf.pos = gk1Pos; gk1.tf.vel = gk1Vel; }
+        if (gk2.isControlled) { gk2.tf.pos = gk2Pos; gk2.tf.vel = gk2Vel; }
     }
-    else if (ball.owner == &player2) {
-        player2.assistDribble(ball, dt);
-    }
-    else {
-        // Bóng tự do → cho cả 2 thử “hỗ trợ kéo bóng”
-        player1.assistDribble(ball, dt);
-        player2.assistDribble(ball, dt);
-    }
 
-    // (GK không rê)
-
-    // === KEEPER AI ===
-    gKeeper.updatePair(ball, gk1, gk2, player1, player2,
-                       fieldW, fieldH, centerY, dt, pickupCooldown);
-
-    // === POSSESSION RULES ===
+    // ===== 7) POSSESSION =====
     PossessionSystem::tryTakeAll(ball, player1, player2, gk1, gk2,
                                  fieldW, boxDepth, pickupCooldown, dt);
 
-    // === PHYSICS ===
-    // Khi đang sở hữu, bỏ bóng khỏi physics để tránh “kéo co” với hệ rê
-    std::vector<Entity*> ents;
-    ents.reserve(5);
+    // ===== 8) PHYSICS =====
+    std::vector<Entity*> ents; ents.reserve(5);
     if (ball.owner == nullptr) ents.push_back(&ball);
     ents.push_back(&player1); ents.push_back(&player2);
     ents.push_back(&gk1);     ents.push_back(&gk2);
-
     physics.step(dt, ents, goals, fieldW, fieldH);
 
-    // === GOALS === (chỉ tính khi bóng tự do)
+    // ===== 9) GOAL CHECK =====
     int gs = (ball.owner==nullptr) ? goals.checkGoal(ball) : 0;
     if (gs!=0){
         if (gs==1) goals.scoreLeft  +=1;
@@ -335,6 +312,8 @@ void MatchScene::update(float dt){
         if (goalSfx) Mix_PlayChannel(-1, goalSfx, 0);
     }
 }
+
+
 
 void MatchScene::render(SDL_Renderer* renderer, bool paused){
     if (pitchTex) SDL_RenderCopy(renderer, pitchTex, nullptr, nullptr);
@@ -378,6 +357,36 @@ void MatchScene::render(SDL_Renderer* renderer, bool paused){
     SDL_Texture* texgk2 = gk2.idle[0].getFrame();
     if (texgk2) SDL_RenderCopy(renderer, texgk2, nullptr, &dst);
     
+        // === Selection pointers (mỗi bên 1 màu, mũi tên trỏ xuống) ===
+    auto drawPointerDown = [&](const Player& who, Uint8 r, Uint8 g, Uint8 b){
+        int sw, sh; SDL_GetRendererOutputSize(renderer,&sw,&sh);
+        const float sx=(float)sw/(float)fieldW, sy=(float)sh/(float)fieldH;
+
+        // bắt đầu ngay TRÊN đỉnh đầu rồi vẽ xuống dưới
+        int cx   = (int)(who.tf.pos.x * sx);
+        int topY = (int)((who.tf.pos.y - who.radius - 10.0f) * sy);
+
+        int H = std::max(6, (int)(10.0f * sy));   // chiều cao tam giác
+        int W = std::max(8, (int)(14.0f * sx));   // bề rộng đáy
+
+        SDL_SetRenderDrawColor(renderer, r,g,b, 255);
+        for (int y = 0; y < H; ++y){
+            float t = (H <= 1) ? 1.0f : (float)y / (float)(H - 1);
+            int half = (int)((1.0f - t) * (W/2));     // nhỏ dần về mũi
+            int ypix = topY + y;                      // vẽ xuống dưới
+            SDL_RenderDrawLine(renderer, cx - half, ypix, cx + half, ypix);
+        }
+    };
+
+    // Bên trái: Cyan
+    if (player1.isControlled) drawPointerDown(player1, 0, 200, 255);
+    else                      drawPointerDown(gk1,     0, 200, 255);
+
+    // Bên phải: Đỏ cam
+    if (player2.isControlled) drawPointerDown(player2, 255, 80, 60);
+    else                      drawPointerDown(gk2,     255, 80, 60);
+
+
     // Goal posts
     SDL_SetRenderDrawColor(renderer,255,255,255,255);
     auto drawPost=[&](const Post& p){ SDL_Rect pr=rectFor(p.pos.x,p.pos.y,p.radius); SDL_RenderFillRect(renderer,&pr); };

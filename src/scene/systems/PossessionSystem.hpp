@@ -8,7 +8,6 @@ namespace PossessionSystem {
                     float fieldW, float boxDepth,
                     float& pickupCooldown, float dt);
 
-    // Xử lý riêng logic keeper (chụp bóng, giữ bóng, auto phất)
-    void updateKeeperBallLogic(Ball& ball, Player& gk,
-                               float& keeperHoldTimer, float dt);
+    // GK ôm bóng: giữ bóng trước tay, auto phất sau X giây, hoặc phất khi bấm shoot
+    void updateKeeperBallLogic(Ball& ball, Player& gk, float& holdTimer, float dt);
 }
