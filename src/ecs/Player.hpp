@@ -1,6 +1,7 @@
 #pragma once
 #include "ecs/Entity.hpp"
 #include "ui/Animation.hpp"
+#include <SDL_mixer.h>
 
 
 class Ball;
@@ -26,6 +27,7 @@ public:
     Animation idle[4];  // idle cho 4 hướng
     Animation run[4];   // run cho 4 hướng
     int dir = 0;        // hướng hiện tại (0=down, 1=left, 2=right, 3=up)
+    Mix_Chunk* kickSfx    = nullptr;
     
     Player();
     void applyInput(float dt);

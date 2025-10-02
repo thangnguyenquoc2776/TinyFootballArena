@@ -53,7 +53,7 @@ void MatchScene::init(const Config& cfg, SDL_Renderer* renderer, HUD* hud_){
     gk2.e_wall=cfg.gkElasticityWall; gk2.accel=cfg.gkAccel; gk2.vmax=cfg.gkMaxSpeed;
 
     // Goals & spawns
-    goals.init(fieldW, fieldH, 3.0f*40.0f/2.0f, 8.0f);
+    goals.init(fieldW, fieldH, 9.0f*40.0f/3.0f, 8.0f);
     initPosBall = Vec2(fieldW*0.5f, centerY);
     initPosP1   = Vec2(fieldW*0.25f, centerY);
     initPosP2   = Vec2(fieldW*0.75f, centerY);
@@ -72,8 +72,6 @@ void MatchScene::init(const Config& cfg, SDL_Renderer* renderer, HUD* hud_){
     // --- Assets ---
     pitchTex = IMG_LoadTexture(mRenderer, "assets/images/pitch2.png");
     ballTex  = IMG_LoadTexture(mRenderer, "assets/images/ball.png");
-    //p1Tex    = IMG_LoadTexture(mRenderer, "assets/images/player1.png");
-    //p2Tex    = IMG_LoadTexture(mRenderer, "assets/images/player2.png");
     gkTex    = IMG_LoadTexture(mRenderer, "assets/images/gk.png");
 
 
@@ -83,6 +81,34 @@ void MatchScene::init(const Config& cfg, SDL_Renderer* renderer, HUD* hud_){
         if (tex) anim.frames.push_back(tex);
     }
 };
+
+    // GK1 idle
+    // loadAnim(gk1.idle[0], {"assets/images/player1/idle/idle_down.png"});
+    // loadAnim(gk1.idle[1], {"assets/images/player1/idle/idle_left.png"});
+    loadAnim(gk1.idle[0], {"assets/images/player1/idle/idle_right.png"});
+    // loadAnim(gk1.idle[3], {"assets/images/player1/idle/idle_up.png"});
+    // GK2 run
+    // loadAnim(gk1.run[0], {"assets/images/player1/run/run_down_1.png", "assets/images/player1/run/run_down_2.png"});
+    // loadAnim(gk1.run[1], {"assets/images/player1/run/run_left_1.png",
+    // "assets/images/player1/idle/idle_left.png"});
+    // loadAnim(gk1.run[2], {"assets/images/player1/run/run_right_1.png",
+    // "assets/images/player1/idle/idle_right.png"});
+    // loadAnim(gk1.run[3], {"assets/images/player1/run/run_up_1.png", "assets/images/player1/run/run_up_2.png"});
+
+
+    // GK2 idle
+    // loadAnim(gk2.idle[0], {"assets/images/player2/idle/idle_down.png"});
+    loadAnim(gk2.idle[0], {"assets/images/player2/idle/idle_left.png"});
+    // loadAnim(gk2.idle[2], {"assets/images/player2/idle/idle_right.png"});
+    // loadAnim(gk2.idle[3], {"assets/images/player2/idle/idle_up.png"});
+
+    // GK2 run
+    // loadAnim(gk2.run[0], {"assets/images/player2/run/run_down_1.png", "assets/images/player2/run/run_down_2.png"});
+    // loadAnim(gk2.run[1], {"assets/images/player2/run/run_left_1.png",
+    // "assets/images/player2/idle/idle_left.png"});
+    // loadAnim(gk2.run[2], {"assets/images/player2/run/run_right_1.png",
+    // "assets/images/player2/idle/idle_right.png"});
+    // loadAnim(gk2.run[3], {"assets/images/player2/run/run_up_1.png", "assets/images/player2/run/run_up_2.png"});
 
     // Player1 idle
     loadAnim(player1.idle[0], {"assets/images/player1/idle/idle_down.png"});
@@ -274,11 +300,13 @@ void MatchScene::render(SDL_Renderer* renderer, bool paused){
 
     // GKs
     dst = rectFor(gk1.tf.pos.x, gk1.tf.pos.y, gk1.radius);
-    if (gkTex) SDL_RenderCopy(renderer,gkTex,nullptr,&dst); else { SDL_SetRenderDrawColor(renderer,100,100,100,255); SDL_RenderFillRect(renderer,&dst); }
+    SDL_Texture* texgk1 = gk1.idle[0].getFrame();
+    if (texgk1) SDL_RenderCopy(renderer, texgk1, nullptr, &dst);
 
     dst = rectFor(gk2.tf.pos.x, gk2.tf.pos.y, gk2.radius);
-    if (gkTex) SDL_RenderCopy(renderer,gkTex,nullptr,&dst); else { SDL_SetRenderDrawColor(renderer,100,100,100,255); SDL_RenderFillRect(renderer,&dst); }
-
+    SDL_Texture* texgk2 = gk2.idle[0].getFrame();
+    if (texgk2) SDL_RenderCopy(renderer, texgk2, nullptr, &dst);
+    
     // Goal posts
     SDL_SetRenderDrawColor(renderer,255,255,255,255);
     auto drawPost=[&](const Post& p){ SDL_Rect pr=rectFor(p.pos.x,p.pos.y,p.radius); SDL_RenderFillRect(renderer,&pr); };

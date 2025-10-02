@@ -4,6 +4,7 @@
 #include <algorithm>
 #include "ui/Animation.hpp"
 #include <unordered_map>
+#include <SDL_mixer.h>
 
 // ===== Tham số cảm giác (bạn có thể tinh chỉnh nhanh) =====
 static const float PPM               = 40.0f;     // px per meter
@@ -52,6 +53,7 @@ static inline Vec2 currentAimDir(const Player& p){
 
 Player::Player(){
     facing = Vec2(1.0f, 0.0f);
+    kickSfx = Mix_LoadWAV("assets/audio/kick.wav");
 }
 
 void Player::applyInput(float dt){
@@ -117,6 +119,8 @@ bool Player::tryShoot(Ball& ball){
     bool veryClose = (rel.length2() <= nearR*nearR);
 
     if (!(ball.owner == this || inFrontWindow || veryClose)) return false;
+
+    if(kickSfx) Mix_PlayChannel(-1, kickSfx, 0);
 
     // Lực bắn: base mạnh + bonus theo tốc độ chạy
     float baseSpeed = 16.8f * PPM;
