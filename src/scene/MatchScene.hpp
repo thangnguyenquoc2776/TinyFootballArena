@@ -73,4 +73,42 @@ private:
     Vec2 initPosP1, initPosP2;
     Vec2 initPosGK1, initPosGK2;
     Vec2 initPosBall;
+
+    // --- External Forces (Wind Mode) ---
+    struct WindParams {
+        // cường độ gió nền (px/s^2) — nên tầm 120..260 cho game hiện tại
+        float baseStrengthMin = 120.0f;
+        float baseStrengthMax = 260.0f;
+
+        // khoảng thời gian đổi hướng gió nền (giây)
+        float dirChangeMin = 3.0f;
+        float dirChangeMax = 7.0f;
+
+        // khoảng thời gian giữa các “gust” (giây)
+        float gustIntervalMin = 1.5f;
+        float gustIntervalMax = 3.5f;
+
+        // lực “gust” (px/s) cộng vào vận tốc bóng theo hướng gió (có jitter)
+        float gustPower = 140.0f;
+
+        // nếu bóng đang được giữ: giảm ảnh hưởng gió
+        float ownerScale = 0.55f;
+
+        // scale drag khi bật gió (slippery nhẹ)
+        float dragScaleBall   = 0.60f;
+        float dragScalePlayer = 0.70f;
+    } windCfg;
+
+    bool extForces = false; // đang bật gió?
+    bool key2Prev  = false; // rising-edge key '2'
+
+    float baseBallDrag = 0.f;
+    float baseP1Drag   = 0.f, baseP2Drag = 0.f;
+    float baseGK1Drag  = 0.f, baseGK2Drag = 0.f;
+
+    Vec2  wind       = Vec2(0,0); // gia tốc gió nền (px/s^2)
+    float gustTimer  = 0.0f;      // đếm tới lần gust tiếp theo
+    float windDirTimer = 0.0f;    // đếm tới lần đổi hướng/độ mạnh gió nền tiếp theo
+
+
 };

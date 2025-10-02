@@ -1,6 +1,7 @@
 #include "scene/MatchScene.hpp"
 #include "ui/HUD.hpp"
-
+#include <SDL_keyboard.h>
+#include <cstdlib>
 // Subsystems còn dùng
 #include "systems/KeeperSystem.hpp"
 #include "scene/systems/PossessionSystem.hpp"
@@ -13,6 +14,10 @@
 #include "ui/Animation.hpp"
 
 static inline float clampf(float v, float lo, float hi){ return (v<lo)?lo:((v>hi)?hi:v); }
+static inline float frand(float a, float b){
+    return a + (b - a) * (std::rand() / (float)RAND_MAX);
+}
+
 static const float PI = 3.14159265358979323846f;
 
 // ===== Subsystem singletons =====
@@ -77,6 +82,24 @@ void MatchScene::init(const Config& cfg, SDL_Renderer* renderer, HUD* hud_){
     player2.tf.pos=initPosP2; player2.tf.vel=Vec2(0,0); player2.facing=Vec2(-1,0);
     gk1.tf.pos=initPosGK1; gk1.tf.vel=Vec2(0,0); gk1.facing=Vec2( 1,0);
     gk2.tf.pos=initPosGK2; gk2.tf.vel=Vec2(0,0); gk2.facing=Vec2(-1,0);
+
+
+    // Lưu drag gốc để scale theo mode
+    baseBallDrag = ball.drag;
+    baseP1Drag   = player1.drag;
+    baseP2Drag   = player2.drag;
+    baseGK1Drag  = gk1.drag;
+    baseGK2Drag  = gk2.drag;
+
+    // Init wind
+    extForces = false; key2Prev = false;
+    wind = Vec2(0,0); gustTimer = 0.f; windDirTimer = 0.f;
+
+    // seed random
+    std::srand((unsigned)SDL_GetTicks());
+
+
+
 
     currentHalf=1; timeRemaining=halfTimeSeconds;
     state=MatchState::Kickoff; stateTimer=kickoffLockTime;
@@ -211,6 +234,43 @@ void MatchScene::update(float dt){
         return;
     }
 
+    // ===== EXTERNAL FORCES: toggle '2' (rising-edge) =====
+    {
+        const Uint8* ks = SDL_GetKeyboardState(NULL);
+        bool key2 = ks[SDL_SCANCODE_2] != 0;
+        if (key2 && !key2Prev) {
+            extForces = !extForces;
+            if (extForces) {
+                // Lập tức random gió nền + hẹn lần đổi tiếp theo
+                float ang = frand(0.f, 2.f*PI);
+                float strength = frand(windCfg.baseStrengthMin, windCfg.baseStrengthMax);
+                wind = Vec2(std::cos(ang), std::sin(ang)) * strength;
+
+                windDirTimer = frand(windCfg.dirChangeMin, windCfg.dirChangeMax);
+                gustTimer    = frand(windCfg.gustIntervalMin, windCfg.gustIntervalMax);
+            }
+        }
+        key2Prev = key2;
+    }
+
+
+    // Scale drag theo mode (ice/slippery nhẹ)
+    if (extForces) {
+        ball.drag    = baseBallDrag * windCfg.dragScaleBall;
+        player1.drag = baseP1Drag   * windCfg.dragScalePlayer;
+        player2.drag = baseP2Drag   * windCfg.dragScalePlayer;
+        gk1.drag     = baseGK1Drag  * windCfg.dragScalePlayer;
+        gk2.drag     = baseGK2Drag  * windCfg.dragScalePlayer;
+    } else {
+        ball.drag    = baseBallDrag;
+        player1.drag = baseP1Drag;
+        player2.drag = baseP2Drag;
+        gk1.drag     = baseGK1Drag;
+        gk2.drag     = baseGK2Drag;
+    }
+
+
+
     // ===== 1) SNAPSHOT input gốc (đến từ InputSystem) =====
     const InputIntent srcP1 = player1.in;
     const InputIntent srcP2 = player2.in;
@@ -293,6 +353,40 @@ void MatchScene::update(float dt){
     // ===== 7) POSSESSION =====
     PossessionSystem::tryTakeAll(ball, player1, player2, gk1, gk2,
                                  fieldW, boxDepth, pickupCooldown, dt);
+
+
+    // ===== EXTERNAL FORCES: gió nền + gust =====
+    if (extForces) {
+        // 1) Tự đổi gió nền sau mỗi khoảng thời gian
+        windDirTimer -= dt;
+        if (windDirTimer <= 0.0f) {
+            float ang = frand(0.f, 2.f*PI);
+            float strength = frand(windCfg.baseStrengthMin, windCfg.baseStrengthMax);
+            wind = Vec2(std::cos(ang), std::sin(ang)) * strength;
+            windDirTimer = frand(windCfg.dirChangeMin, windCfg.dirChangeMax);
+        }
+
+        // 2) Gió tác động như gia tốc lên bóng
+        float scale = (ball.owner ? windCfg.ownerScale : 1.0f);
+        ball.tf.vel += wind * (scale * dt);
+
+        // 3) Gust ngắt quãng — cộng thêm một xung vận tốc theo hướng gió (jitter)
+        gustTimer -= dt;
+        if (gustTimer <= 0.0f) {
+            // jitter ±0.35 rad quanh hướng gió
+            float jitter = frand(-0.35f, 0.35f);
+            float cs = std::cos(jitter), sn = std::sin(jitter);
+            Vec2 gust(wind.x*cs - wind.y*sn, wind.x*sn + wind.y*cs);
+
+            if (gust.length() > 1e-4f) {
+                Vec2 gv = gust.normalized() * windCfg.gustPower;
+                ball.tf.vel += gv;
+            }
+            gustTimer = frand(windCfg.gustIntervalMin, windCfg.gustIntervalMax);
+        }
+    }
+
+
 
     // ===== 8) PHYSICS =====
     std::vector<Entity*> ents; ents.reserve(5);
@@ -403,5 +497,23 @@ void MatchScene::render(SDL_Renderer* renderer, bool paused){
     else if (state==MatchState::Kickoff && currentHalf==1 && goals.scoreLeft==0 && goals.scoreRight==0) banner="KICK OFF";
     else if (state==MatchState::HalfTimeBreak) banner="HALF TIME";
     else if (state==MatchState::FullTime) banner="FULL TIME";
+
+    // Indicator nhỏ cho ngoại lực (trên cùng trái)
+    if (extForces) {
+        SDL_SetRenderDrawColor(renderer, 255, 255, 0, 200);
+        SDL_Rect badge{ 10, 10, 80, 22 };
+        SDL_RenderFillRect(renderer, &badge);
+
+        // Vẽ biểu tượng mũi tên gió
+        SDL_SetRenderDrawColor(renderer, 60, 60, 60, 255);
+        int cx = 50, cy = 21;
+        int len = 28;
+        int x2 = cx + (int)(len * (wind.length() > 1e-4f ? (wind.x / (std::max(std::abs(wind.x)+std::abs(wind.y), 1.0f))) : 1));
+        int y2 = cy + (int)(len * (wind.length() > 1e-4f ? (wind.y / (std::max(std::abs(wind.x)+std::abs(wind.y), 1.0f))) : 0));
+        SDL_RenderDrawLine(renderer, cx-12, cy, cx+12, cy); // nền
+        SDL_RenderDrawLine(renderer, cx, cy, x2, y2);       // hướng gió
+    }
+
+
     if (hud) hud->render(sc,t,banner);
 }
