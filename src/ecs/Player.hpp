@@ -21,6 +21,7 @@ public:
     bool  tackling = false;
     float tackleTimer = 0.0f;
 
+
     Player();
     void applyInput(float dt);
     bool tryShoot(Ball& ball);

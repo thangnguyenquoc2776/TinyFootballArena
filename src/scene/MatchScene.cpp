@@ -82,16 +82,24 @@ void MatchScene::init(const Config& cfg, SDL_Renderer* renderer, HUD* hud_){
     gDribble.reset();
     gKeeper.reset();
 
-    // 🎯 Tuning dribble: nhịp chậm hơn, xoay mượt, lực đẩy dịu
     DribbleSystem::Params dp;
-    dp.tps         = 6.4f;
-    dp.turnRate    = 2.6f;            // ít giật khi đổi hướng
-    dp.touchSpeed  = 4.4f * 40.0f;    // lực đẩy mỗi chạm
-    dp.maxSpeed    = 5.0f * 40.0f;
-    dp.minSpeed    = 1.1f * 40.0f;
-    dp.extraLead   = 6.0f;
-    dp.loseDistance= 44.0f;
+    dp.smoothTimeMove = 0.14f;
+    dp.smoothTimeStop = 0.20f;
+    dp.turnRate       = 1.6f;     // xoay hiền → đỡ giật
+    dp.extraLead      = 12.0f;    // >>> xa chân hơn
+    dp.leadSpeedK     = 0.030f;   // chạy nhanh → lead tăng thêm
+    dp.lateralBias    = 4.5f;     // lệch chân thuận
+    dp.targetDeadRad  = 5.0f;
+
+    dp.maxSpeed       = 5.2f * 40.0f;
+    dp.minSpeed       = 1.0f * 40.0f;
+    dp.carryFactor    = 0.30f;
+    dp.loseDistance   = 48.0f;
+    dp.idleDamping    = 9.0f;
     gDribble.setParams(dp);
+
+
+
 }
 
 void MatchScene::update(float dt){
@@ -143,12 +151,22 @@ void MatchScene::update(float dt){
         return;
     }
 
-    // Input & actions
-    player1.applyInput(dt); player2.applyInput(dt);
-    if (player1.in.shoot) player1.tryShoot(ball);
+        // Input & actions
+    player1.applyInput(dt);
+    player2.applyInput(dt);
+
+    bool shot1 = false, shot2 = false;
+    if (player1.in.shoot) shot1 = player1.tryShoot(ball);
     if (player1.in.slide) player1.trySlide(ball, dt);
-    if (player2.in.shoot) player2.tryShoot(ball);
+    if (player2.in.shoot) shot2 = player2.tryShoot(ball);
     if (player2.in.slide) player2.trySlide(ball, dt);
+
+    // Nếu vừa có cú sút -> khóa nhặt lại ngắn (tránh “dính chân”)
+    if (shot1 || shot2) {
+        pickupCooldown = std::max(pickupCooldown, 0.22f);
+    }
+
+
 
     if (!ball.owner){ player1.assistDribble(ball, dt); player2.assistDribble(ball, dt); }
 
@@ -156,16 +174,18 @@ void MatchScene::update(float dt){
     gKeeper.updatePair(ball, gk1, gk2, player1, player2, fieldW, fieldH, centerY, dt, pickupCooldown);
 
     // Possession rules (nhặt bóng hợp lệ)
-    PossessionSystem::tryTakeAll(ball, player1, player2, gk1, gk2, fieldW, boxDepth, pickupCooldown);
+    PossessionSystem::tryTakeAll(ball, player1, player2, gk1, gk2,
+                                fieldW, boxDepth, pickupCooldown, dt);
 
-    // 🔁 Đặt dribble TRƯỚC physics để tránh kéo-co gây giật
+
     if (ball.owner==&player1 || ball.owner==&player2) {
-        gDribble.update(ball, *ball.owner, dt);
+        gDribble.update(ball, *ball.owner, dt);   // ĐẶT TRƯỚC physics
     }
-
-    // Physics
-    std::vector<Entity*> ents = { &ball, &player1, &player2, &gk1, &gk2 };
+    std::vector<Entity*> ents = { &player1, &player2, &gk1, &gk2 };
+    if (!ball.owner) ents.insert(ents.begin(), &ball);  // bóng có chủ thì KHÔNG đưa vào physics
     physics.step(dt, ents, goals, fieldW, fieldH);
+
+
 
     // Goals (chỉ tính khi bóng tự do)
     int gs = (ball.owner==nullptr) ? goals.checkGoal(ball) : 0;
