@@ -1,5 +1,6 @@
 #include "ecs/Player.hpp"
 #include "ecs/Ball.hpp"
+#include <algorithm>
 #include <cmath>
 
 static const float CONTROL_CONE_ANGLE_COS = std::cos(35.0f * M_PI / 180.0f);
@@ -7,6 +8,21 @@ static const float CONTROL_CONE_ANGLE_COS = std::cos(35.0f * M_PI / 180.0f);
 Player::Player() {
     facing = Vec2(1.0f, 0.0f);
 }
+
+static Vec2 rotateTowards(const Vec2& from, const Vec2& to, float maxRad) {
+    Vec2 a = from.normalized();
+    Vec2 b = to.normalized();
+    float dot = std::clamp(Vec2::dot(a,b), -1.0f, 1.0f);
+    float ang = std::acos(dot);
+    if (ang <= maxRad || ang < 1e-4f) return b;
+    // dấu xoay theo cross
+    float cross = a.x*b.y - a.y*b.x;
+    float sgn = (cross >= 0.f) ? 1.f : -1.f;
+    float rot = maxRad * sgn;
+    float cs = std::cos(rot), sn = std::sin(rot);
+    return Vec2(a.x*cs - a.y*sn, a.x*sn + a.y*cs);
+}
+
 
 void Player::applyInput(float dt) {
     if (shootCooldown > 0) shootCooldown -= dt;
@@ -23,7 +39,10 @@ void Player::applyInput(float dt) {
     if (in.x != 0.0f || in.y != 0.0f) {
         Vec2 moveDir(in.x, in.y);
         moveDir = moveDir.normalized();
-        facing  = moveDir;
+        // facing  quay dần về hướng bấm, thay vì “nhảy”
+        const float MAX_FACE_TURN = 6.0f; // rad/s ≈ 343°/s
+        facing = rotateTowards(facing, moveDir, MAX_FACE_TURN * dt);
+
         tf.vel.x += moveDir.x * accel * dt;
         tf.vel.y += moveDir.y * accel * dt;
     }

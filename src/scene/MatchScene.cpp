@@ -1,17 +1,25 @@
 #include "scene/MatchScene.hpp"
 #include "ui/HUD.hpp"
 #include <SDL_image.h>
+#include <SDL_mixer.h>
 #include <cmath>
 #include <cstdio>
+#include <algorithm>   // std::max, std::min
+
+// --- helpers nhỏ gọn ---
+static inline float clampf(float v, float lo, float hi) {
+    return (v < lo) ? lo : (v > hi ? hi : v);
+}
+static const float PI = 3.14159265358979323846f;
 
 MatchScene::~MatchScene() {
-    if (pitchTex) { SDL_DestroyTexture(pitchTex); pitchTex = nullptr; }
-    if (ballTex)  { SDL_DestroyTexture(ballTex);  ballTex  = nullptr; }
-    if (p1Tex)    { SDL_DestroyTexture(p1Tex);    p1Tex    = nullptr; }
-    if (p2Tex)    { SDL_DestroyTexture(p2Tex);    p2Tex    = nullptr; }
-    if (gkTex)    { SDL_DestroyTexture(gkTex);    gkTex    = nullptr; }
-    if (goalSfx)  { Mix_FreeChunk(goalSfx);       goalSfx  = nullptr; }
-    if (crowdMusic) { Mix_FreeMusic(crowdMusic);  crowdMusic = nullptr; }
+    if (pitchTex)   { SDL_DestroyTexture(pitchTex);   pitchTex   = nullptr; }
+    if (ballTex)    { SDL_DestroyTexture(ballTex);    ballTex    = nullptr; }
+    if (p1Tex)      { SDL_DestroyTexture(p1Tex);      p1Tex      = nullptr; }
+    if (p2Tex)      { SDL_DestroyTexture(p2Tex);      p2Tex      = nullptr; }
+    if (gkTex)      { SDL_DestroyTexture(gkTex);      gkTex      = nullptr; }
+    if (goalSfx)    { Mix_FreeChunk(goalSfx);         goalSfx    = nullptr; }
+    if (crowdMusic) { Mix_FreeMusic(crowdMusic);      crowdMusic = nullptr; }
 }
 
 void MatchScene::init(const Config& config, SDL_Renderer* renderer, HUD* hud_) {
@@ -26,21 +34,21 @@ void MatchScene::init(const Config& config, SDL_Renderer* renderer, HUD* hud_) {
     kickoffLockTime = config.kickoffLockTime;
 
     // --- Khởi tạo thực thể theo config ---
-    ball.id = 0;
+    ball.id     = 0;
     ball.radius = config.ballRadius;
-    ball.mass = config.ballMass;
-    ball.drag = config.ballDrag;
+    ball.mass   = config.ballMass;
+    ball.drag   = config.ballDrag;
     ball.e_wall = config.ballElasticityWall;
 
-    player1.id = 1;
+    player1.id     = 1;
     player1.radius = config.playerRadius;
-    player1.mass = config.playerMass;
-    player1.drag = config.playerDrag;
+    player1.mass   = config.playerMass;
+    player1.drag   = config.playerDrag;
     player1.e_wall = config.playerElasticityWall;
-    player1.accel = config.playerAccel;
-    player1.vmax  = config.playerMaxSpeed;
+    player1.accel  = config.playerAccel;
+    player1.vmax   = config.playerMaxSpeed;
 
-    player2.id = 2;
+    player2.id     = 2;
     player2.radius = config.playerRadius;
     player2.mass   = config.playerMass;
     player2.drag   = config.playerDrag;
@@ -48,7 +56,7 @@ void MatchScene::init(const Config& config, SDL_Renderer* renderer, HUD* hud_) {
     player2.accel  = config.playerAccel;
     player2.vmax   = config.playerMaxSpeed;
 
-    gk1.id = 3;
+    gk1.id     = 3;
     gk1.radius = config.gkRadius;
     gk1.mass   = config.gkMass;
     gk1.drag   = config.gkDrag;
@@ -56,7 +64,7 @@ void MatchScene::init(const Config& config, SDL_Renderer* renderer, HUD* hud_) {
     gk1.accel  = config.gkAccel;
     gk1.vmax   = config.gkMaxSpeed;
 
-    gk2.id = 4;
+    gk2.id     = 4;
     gk2.radius = config.gkRadius;
     gk2.mass   = config.gkMass;
     gk2.drag   = config.gkDrag;
@@ -65,7 +73,7 @@ void MatchScene::init(const Config& config, SDL_Renderer* renderer, HUD* hud_) {
     gk2.vmax   = config.gkMaxSpeed;
 
     // --- Khung thành ---
-    float goalHalfHeight = 3.0f * 40.0f / 2.0f; // 3m ~ 120px → half = 60px (tùy scale bạn)
+    float goalHalfHeight = 3.0f * 40.0f / 2.0f; // 3m ~ 120px → half = 60px
     float postRadius = 8.0f;
     goals.init(fieldW, fieldH, goalHalfHeight, postRadius);
 
@@ -76,11 +84,11 @@ void MatchScene::init(const Config& config, SDL_Renderer* renderer, HUD* hud_) {
     initPosGK1  = Vec2(config.gkFrontOffset + player1.radius, centerY);
     initPosGK2  = Vec2(fieldW - config.gkFrontOffset - player2.radius, centerY);
 
-    ball.tf.pos = initPosBall; ball.tf.vel = Vec2(0,0);
-    player1.tf.pos = initPosP1; player1.tf.vel = Vec2(0,0);
-    player2.tf.pos = initPosP2; player2.tf.vel = Vec2(0,0);
-    gk1.tf.pos = initPosGK1; gk1.tf.vel = Vec2(0,0);
-    gk2.tf.pos = initPosGK2; gk2.tf.vel = Vec2(0,0);
+    ball.tf.pos    = initPosBall; ball.tf.vel    = Vec2(0,0);
+    player1.tf.pos = initPosP1;   player1.tf.vel = Vec2(0,0);
+    player2.tf.pos = initPosP2;   player2.tf.vel = Vec2(0,0);
+    gk1.tf.pos     = initPosGK1;  gk1.tf.vel     = Vec2(0,0);
+    gk2.tf.pos     = initPosGK2;  gk2.tf.vel     = Vec2(0,0);
 
     // --- Trạng thái bắt đầu ---
     currentHalf   = 1;
@@ -109,8 +117,8 @@ void MatchScene::update(float dt) {
     // --- timers giữ bóng của GK + cooldown nhặt bóng lại ngay sau khi phát ---
     static float gk1Hold = 0.0f, gk2Hold = 0.0f;
     static float pickupCooldown = 0.0f;
-    const float KEEPER_MAX_HOLD = 2.5f;    // GK giữ tối đa 2.5s
-    const float PICKUP_COOLDOWN = 0.25f;   // tránh “nhặt lại” ngay
+    const float KEEPER_MAX_HOLD  = 2.5f;   // GK giữ tối đa 2.5s
+    const float PICKUP_COOLDOWN  = 0.25f;  // tránh “nhặt lại” ngay
 
     pickupCooldown = std::max(0.0f, pickupCooldown - dt);
 
@@ -126,7 +134,7 @@ void MatchScene::update(float dt) {
         if (stateTimer <= 0.0f) {
             if (timeRemaining <= 0.0f) {
                 if (currentHalf < 2) { state = MatchState::HalfTimeBreak; stateTimer = 2.0f; }
-                else { state = MatchState::FullTime; }
+                else                 { state = MatchState::FullTime; }
             } else {
                 state = MatchState::Kickoff; stateTimer = 1.0f;
             }
@@ -166,7 +174,7 @@ void MatchScene::update(float dt) {
     if (timeRemaining <= 0.0f) {
         timeRemaining = 0.0f;
         if (currentHalf < 2) { state = MatchState::HalfTimeBreak; stateTimer = 2.0f; }
-        else { state = MatchState::FullTime; }
+        else                 { state = MatchState::FullTime; }
         return;
     }
 
@@ -182,10 +190,9 @@ void MatchScene::update(float dt) {
     if (player2.in.shoot) player2.tryShoot(ball);
     if (player2.in.slide) player2.trySlide(ball, dt);
 
+    // Rê mềm trợ giúp (chỉ cầu thủ)
     player1.assistDribble(ball, dt);
     player2.assistDribble(ball, dt);
-    // ❌ KHÔNG gọi cho gk1/gk2
-
 
     // --- POSSESSION RULES ---
     auto inKeeperZone = [&](const Player* p)->bool {
@@ -206,11 +213,11 @@ void MatchScene::update(float dt) {
         bool isKeeper = (p == &gk1 || p == &gk2);
         if (isKeeper && !inKeeperZone(p)) return; // GK chỉ bắt trong khu của mình
 
-        if (cosA > std::cos(60.0f * M_PI/180.0f) && d < captureRange &&
+        if (cosA > std::cos(60.0f * PI/180.0f) && d < captureRange &&
             ball.tf.vel.length() < maxBallSpeed) {
             ball.owner = p;
-            if (p == &gk1) { gk1Hold = 0.0f; } 
-            else if (p == &gk2) { gk2Hold = 0.0f; }
+            if (p == &gk1)      gk1Hold = 0.0f;
+            else if (p == &gk2) gk2Hold = 0.0f;
         }
     };
 
@@ -228,54 +235,71 @@ void MatchScene::update(float dt) {
     gk2.tf.pos.x = initPosGK2.x;
 
     // --- Ball follow logic ---
+    // Cầu thủ sở hữu: spring–damper + giới hạn tốc độ đổi hướng (turn-rate clamp)
     if (ball.owner == &player1 || ball.owner == &player2) {
-        // Cầu thủ: spring-damper để bám chậm, có quán tính (rê mềm)
         Player* h = ball.owner;
         float lead = h->radius + ball.radius + 6.0f;
         Vec2  fwd  = h->facing.normalized();
         Vec2  target = h->tf.pos + fwd * lead;
 
-        const float K = 18.0f;   // độ cứng
-        const float D = 6.5f;    // giảm chấn
+        const float K = 16.0f; // độ cứng
+        const float D = 7.5f;  // giảm chấn
         Vec2 delta = target - ball.tf.pos;
         Vec2 acc   = delta * K - ball.tf.vel * D;
         ball.tf.vel += acc * dt;
 
-        const float MAX_V = 5.5f * 40.0f; // tốc độ tối đa khi rê
+        const float MAX_DRIBBLE_V = 5.0f * 40.0f; // ≈ 5.0 m/s
         float sp = ball.tf.vel.length();
-        if (sp > MAX_V) ball.tf.vel = ball.tf.vel * (MAX_V / sp);
+        if (sp > MAX_DRIBBLE_V) ball.tf.vel = ball.tf.vel * (MAX_DRIBBLE_V / sp);
 
-    } else if (ball.owner == &gk1 || ball.owner == &gk2) {
-        // GK: KHÔNG rê. Ôm bóng đứng y, giữ tối đa 2.5s rồi phát.
+        // Giới hạn tốc độ đổi hướng của bóng
+        sp = ball.tf.vel.length();
+        if (sp > 1.0f) {
+            Vec2 vdir = ball.tf.vel * (1.0f / sp);
+            Vec2 targetDir = fwd;
+
+            float dot = clampf(Vec2::dot(vdir, targetDir), -1.0f, 1.0f);
+            float ang = std::acos(dot);
+            const float MAX_BALL_TURN = 3.0f; // rad/s ≈ 172°/s
+            float maxStep = MAX_BALL_TURN * dt;
+
+            if (ang > 1e-4f) {
+                float cross = vdir.x*targetDir.y - vdir.y*targetDir.x;
+                float sgn   = (cross >= 0.f) ? 1.f : -1.f;
+                float rot   = std::min(ang, maxStep) * sgn;
+                float cs = std::cos(rot), sn = std::sin(rot);
+                Vec2 v2(vdir.x*cs - vdir.y*sn, vdir.x*sn + vdir.y*cs);
+                ball.tf.vel = v2 * sp;
+            }
+        }
+    }
+    // GK sở hữu: không rê; ôm tối đa 2.5s rồi phát
+    else if (ball.owner == &gk1 || ball.owner == &gk2) {
         Player* k = ball.owner;
         float& hold = (k == &gk1) ? gk1Hold : gk2Hold;
         hold += dt;
 
-        // giữ bóng ngay trước người, không di chuyển bóng theo vận tốc
         Vec2 fwd = k->facing.normalized();
         float holdDist = k->radius + ball.radius + 4.0f;
         ball.tf.pos = k->tf.pos + fwd * holdDist;
         ball.tf.vel = Vec2(0,0);
 
-        // nếu có áp lực gần (đối thủ áp sát), phát ngay
+        // Áp lực gần → phát ngay
         float pressDist = 60.0f;
         bool pressured = (k == &gk1)
             ? ((player2.tf.pos - k->tf.pos).length() < pressDist)
             : ((player1.tf.pos - k->tf.pos).length() < pressDist);
 
         if (hold >= KEEPER_MAX_HOLD || pressured) {
-            // Hướng phát bóng: về phía nửa sân đối diện, hơi hướng tâm
-            Vec2 target;
-            if (k == &gk1) target = Vec2(fieldW * 0.75f, centerY);
-            else           target = Vec2(fieldW * 0.25f, centerY);
-
+            Vec2 target = (k == &gk1) ? Vec2(fieldW * 0.75f, centerY)
+                                      : Vec2(fieldW * 0.25f, centerY);
             Vec2 dir = (target - k->tf.pos).normalized();
-            float clearSpeed = 11.0f * 40.0f;    // ~11 m/s phát bóng
+            float clearSpeed = 11.0f * 40.0f; // ~11 m/s
             ball.owner = nullptr;
             ball.tf.vel = dir * clearSpeed;
 
             hold = 0.0f;
-            pickupCooldown = PICKUP_COOLDOWN;   // tránh cầm lại ngay
+            pickupCooldown = PICKUP_COOLDOWN; // tránh cầm lại ngay
         }
     }
 
@@ -291,14 +315,16 @@ void MatchScene::update(float dt) {
     }
 }
 
-
-
 void MatchScene::render(SDL_Renderer* renderer, bool paused) {
-    // Vẽ nền sân (texture sẽ auto fit theo kích thước renderer)
+    // Vẽ nền sân (texture full window)
     if (pitchTex) SDL_RenderCopy(renderer, pitchTex, nullptr, nullptr);
-    else { SDL_SetRenderDrawColor(renderer, 0, 100, 0, 255); SDL_Rect fieldRect = {0,0,fieldW,fieldH}; SDL_RenderFillRect(renderer, &fieldRect); }
+    else {
+        SDL_SetRenderDrawColor(renderer, 0, 100, 0, 255);
+        SDL_Rect fieldRect = {0,0,fieldW,fieldH};
+        SDL_RenderFillRect(renderer, &fieldRect);
+    }
 
-    // --- Thêm scale từ thế giới -> màn hình ---
+    // Scale world -> screen
     int screenW, screenH;
     SDL_GetRendererOutputSize(renderer, &screenW, &screenH);
     const float sx = (float)screenW / (float)fieldW;
@@ -313,7 +339,7 @@ void MatchScene::render(SDL_Renderer* renderer, bool paused) {
         return dst;
     };
 
-    // Bóng
+    // Ball
     SDL_Rect dst = rectFor(ball.tf.pos.x, ball.tf.pos.y, ball.radius);
     if (ballTex) SDL_RenderCopy(renderer, ballTex, nullptr, &dst);
     else { SDL_SetRenderDrawColor(renderer, 255,255,255,255); SDL_RenderFillRect(renderer, &dst); }
@@ -338,7 +364,7 @@ void MatchScene::render(SDL_Renderer* renderer, bool paused) {
     if (gkTex) SDL_RenderCopy(renderer, gkTex, nullptr, &dst);
     else { SDL_SetRenderDrawColor(renderer, 100,100,100,255); SDL_RenderFillRect(renderer, &dst); }
 
-    // Cột gôn (scale vị trí + bán kính)
+    // Cột gôn
     SDL_SetRenderDrawColor(renderer, 255,255,255,255);
     auto drawPost = [&](const Post& p){
         SDL_Rect pr = rectFor(p.pos.x, p.pos.y, p.radius);
@@ -352,7 +378,7 @@ void MatchScene::render(SDL_Renderer* renderer, bool paused) {
     // HUD
     int minutes = (int)timeRemaining / 60;
     int seconds = (int)timeRemaining % 60;
-    char timeStr[6]; std::sprintf(timeStr, "%02d:%02d", minutes, seconds);
+    char timeStr[6];  std::sprintf(timeStr, "%02d:%02d", minutes, seconds);
     char scoreStr[16]; std::sprintf(scoreStr, "%d - %d", goals.scoreLeft, goals.scoreRight);
     const char* bannerText = "";
     if (paused) bannerText = "PAUSED";
@@ -362,4 +388,3 @@ void MatchScene::render(SDL_Renderer* renderer, bool paused) {
     else if (state == MatchState::FullTime) bannerText = "FULL TIME";
     if (hud) hud->render(scoreStr, timeStr, bannerText);
 }
-
