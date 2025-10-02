@@ -1,8 +1,12 @@
 #pragma once
 #include "ecs/Entity.hpp"
 
-// Lớp đại diện bóng, kế thừa Entity (hiện tại không có thuộc tính riêng)
+// Khai báo sớm để dùng con trỏ đến Player mà không cần include vòng tròn
+class Player;
+
 class Ball : public Entity {
 public:
     Ball() {}
+    // Ai đang giữ bóng; nullptr = bóng tự do
+    Player* owner = nullptr;
 };

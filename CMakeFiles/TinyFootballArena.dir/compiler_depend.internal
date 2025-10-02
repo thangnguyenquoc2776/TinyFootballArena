@@ -797,6 +797,7 @@ CMakeFiles/TinyFootballArena.dir/src/core/Game.cpp.obj
  C:/mingw_dev_libs/SDL2/x86_64-w64-mingw32/include/SDL2/begin_code.h
  C:/mingw_dev_libs/SDL2/x86_64-w64-mingw32/include/SDL2/close_code.h
  C:/mingw_dev_libs/SDL2_Font/x86_64-w64-mingw32/include/SDL2/SDL_ttf.h
+ C:/mingw_dev_libs/SDL2_Mixer/x86_64-w64-mingw32/include/SDL2/SDL_mixer.h
  D:/SDL2_Project/TinyFootballArena/src/core/Config.hpp
  D:/SDL2_Project/TinyFootballArena/src/core/Game.hpp
  D:/SDL2_Project/TinyFootballArena/src/ecs/Ball.hpp
@@ -2183,6 +2184,7 @@ CMakeFiles/TinyFootballArena.dir/src/main.cpp.obj
  C:/mingw_dev_libs/SDL2/x86_64-w64-mingw32/include/SDL2/begin_code.h
  C:/mingw_dev_libs/SDL2/x86_64-w64-mingw32/include/SDL2/close_code.h
  C:/mingw_dev_libs/SDL2_Font/x86_64-w64-mingw32/include/SDL2/SDL_ttf.h
+ C:/mingw_dev_libs/SDL2_Mixer/x86_64-w64-mingw32/include/SDL2/SDL_mixer.h
  D:/SDL2_Project/TinyFootballArena/src/core/Config.hpp
  D:/SDL2_Project/TinyFootballArena/src/core/Game.hpp
  D:/SDL2_Project/TinyFootballArena/src/core/Input.hpp
