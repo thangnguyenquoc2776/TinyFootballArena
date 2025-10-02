@@ -1,13 +1,11 @@
 #pragma once
-#include "ecs/Ball.hpp"
 #include "ecs/Player.hpp"
+#include "ecs/Ball.hpp"
 
-struct PossessionSystem {
-    static void tryTakeAll(Ball& ball,
-                           Player& p1, Player& p2, Player& gk1, Player& gk2,
-                           float fieldW, float boxDepth, float& pickupCooldown);
-
-private:
-    static bool inKeeperBox(const Player* p, const Ball& ball, float fieldW, float boxDepth);
-    static void tryTakeOne(Ball& ball, Player* p, float fieldW, float boxDepth, float& pickupCooldown);
-};
+namespace PossessionSystem {
+    // pickupCooldown: cooldown chung tránh nhặt lại quá sớm (tham chiếu để giảm dần)
+    void tryTakeAll(Ball& ball,
+                    Player& p1, Player& p2, Player& gk1, Player& gk2,
+                    float fieldW, float boxDepth,
+                    float& pickupCooldown, float dt);
+}

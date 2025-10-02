@@ -15,76 +15,82 @@ Vec2 DribbleSystem::rotateTowards(const Vec2& a, const Vec2& b, float maxRad) {
     return Vec2(from.x*cs - from.y*sn, from.x*sn + from.y*cs);
 }
 
+// Critically-damped smoothing (không overshoot, ổn định số)
+Vec2 DribbleSystem::smoothDamp(const Vec2& current, const Vec2& target,
+                               Vec2& vel, float smoothTime, float dt)
+{
+    smoothTime = std::max(0.0001f, smoothTime);
+    float omega = 2.0f / smoothTime;
+    float x = omega * dt;
+    float expf = 1.0f / (1.0f + x + 0.48f*x*x + 0.235f*x*x*x);
+
+    Vec2 change = current - target;
+    Vec2 temp   = (vel + change * omega) * dt;
+    vel = (vel - temp * omega) * expf;
+    return target + (change + temp) * expf;
+}
+
 void DribbleSystem::update(Ball& ball, Player& h, float dt) {
-    float& touchTimer = timers[h.id]; // mặc định 0 nếu chưa có
+    Vec2& fv = filtVel[h.id]; // vận tốc nội bộ của bộ lọc
 
-    Vec2 dir = h.facing.normalized();
-    if (dir.length() < 1e-6f) dir = Vec2(1,0);
+    // Hướng mặt & các tham số cơ bản
+    Vec2 dir = h.facing.normalized(); if (dir.length() < 1e-6f) dir = Vec2(1,0);
+    float pSpd = h.tf.vel.length();
+    bool moving = (pSpd > 0.6f * 40.0f);
 
-    float lead = h.radius + ball.radius + P.extraLead;
-    Vec2  contactPos = h.tf.pos + dir * lead;
+    // Lead động theo tốc độ + lateral bias để bóng lệch 1 bên
+    float lead = h.radius + ball.radius + P.extraLead + P.leadSpeedK * pSpd;
+    Vec2 perp(-dir.y, dir.x);
+    float side = (dir.x >= 0.0f) ? 1.0f : -1.0f;    // đơn giản: quay mặt sang phải dùng chân phải
+    Vec2 lateral = perp * (side * P.lateralBias);
 
-    // Mất bóng nếu quá xa thân người
+    Vec2 target = h.tf.pos + dir * lead + lateral;
+
+    // mất bóng nếu quá xa người
     if ( (ball.tf.pos - h.tf.pos).length() > (lead + P.loseDistance) ) {
         ball.owner = nullptr;
         return;
     }
 
-    // ==== IDLE SETTLE: đứng yên thì KHÔNG tap, ghìm bóng về vị trí trước mũi chân ====
-    const float PLAYER_IDLE_SPD = 0.6f * 40.0f;  // ~0.6 m/s
-    const float SETTLE_K        = 28.0f;         // độ cứng lò xo
-    const float SETTLE_D        = 12.0f;         // giảm chấn
-    float pspd   = h.tf.vel.length();
-    bool  moving = pspd > PLAYER_IDLE_SPD;
+    // Smooth theo trạng thái (đi/đứng)
+    float st = moving ? P.smoothTimeMove : P.smoothTimeStop;
 
-    if (!moving) {
-        // spring–damper tới contactPos
-        Vec2 delta = contactPos - ball.tf.pos;
-        Vec2 acc   = delta * SETTLE_K - ball.tf.vel * SETTLE_D;
-        ball.tf.vel += acc * dt;
+    // SmoothDamp vị trí → target (không teleport)
+    Vec2 prev = ball.tf.pos;
+    ball.tf.pos = smoothDamp(prev, target, fv, st, dt);
 
-        // diệt jitter rất nhỏ
-        if (delta.length() < 1.5f && ball.tf.vel.length() < 8.0f) {
-            ball.tf.pos = contactPos;
-            ball.tf.vel = Vec2(0,0);
-        }
-        // reset để khi bắt đầu chạy lại là tap ngay
-        touchTimer = 0.0f;
-        return;
+    // Deadzone: rất gần mục tiêu khi chậm → snap để diệt rung vặt
+    Vec2 toT = target - ball.tf.pos;
+    if (!moving && toT.length() < P.targetDeadRad) {
+        ball.tf.pos = target;
     }
 
-    // ==== ĐANG DI CHUYỂN → tap theo nhịp + xoay mượt ====
-    touchTimer -= dt;
-    if (touchTimer <= 0.0f) {
-        // Mỗi lần chạm: đặt bóng sát trước mũi chân và đẩy theo hướng mặt
-        float carry = pspd * P.carryFactor;
-        float sp = std::clamp(P.touchSpeed + carry, P.minSpeed, P.maxSpeed);
+    // Ước lượng vận tốc rồi căn hướng mượt về mặt cầu thủ
+    Vec2 v = (ball.tf.pos - prev) * (1.0f / std::max(1e-4f, dt));
+    float vlen = v.length();
 
-        ball.tf.pos = contactPos;
-        ball.tf.vel = dir * sp;
+    if (vlen > 1.0f) {
+        Vec2 vdir = v * (1.0f / vlen);
 
-        touchTimer = 1.0f / P.tps;
-    } else {
-        // Xoay hướng vận tốc về hướng mặt – tốc độ xoay tỉ lệ với tốc độ chạy
-        float vlen = ball.tf.vel.length();
-        if (vlen > 1.0f) {
-            float turn = P.turnRate * (0.6f + 0.4f * std::min(1.0f, pspd / (h.vmax + 1.0f)));
-            Vec2  vdir = ball.tf.vel * (1.0f / vlen);
-            Vec2  ndir = rotateTowards(vdir, dir, turn * dt);
-            ball.tf.vel = ndir * vlen;
-        }
+        // Trộn hướng với mặt cầu thủ để tránh "loạn hướng"
+        float align = 0.35f + 0.50f * std::min(1.0f, pSpd / (h.vmax + 1.0f)); // 0.35..0.85
+        Vec2 blend = (vdir * (1.0f - align) + dir * align);
+        float bl = blend.length();
+        if (bl > 1e-6f) blend = blend * (1.0f / bl);
+        else            blend = dir;
 
-        // Hút nhẹ để bóng bám quỹ đạo phía trước, không bị lọt ra sau gót
-        Vec2 toContact = contactPos - ball.tf.pos;
-        float dist = toContact.length();
-        if (dist > 0.5f) {
-            float pull = std::min(dist * 5.0f * dt, 8.0f);
-            ball.tf.pos += toContact * (pull / std::max(dist, 1e-3f));
-        }
-
-        // Giới hạn tốc độ
-        float sp = ball.tf.vel.length();
-        if (sp > P.maxSpeed) ball.tf.vel *= (P.maxSpeed / sp);
-        if (sp < P.minSpeed) ball.tf.vel  = dir * P.minSpeed;
+        // Giới hạn tốc độ xoay để mượt
+        Vec2 ndir = rotateTowards(vdir, blend, P.turnRate * dt);
+        v = ndir * vlen;
     }
+
+    // Đặt magnitude theo mong muốn (đi chậm khi chậm, nhanh khi nhanh)
+    float want = std::clamp(P.minSpeed + pSpd * P.carryFactor, P.minSpeed, P.maxSpeed);
+    float mag = std::clamp(v.length(), P.minSpeed, want);
+    if (mag > 1.0f) v = v * (mag / std::max(1.0f, v.length()));
+
+    // Khi đứng yên → dập vận tốc nhanh để tránh “đập đập”
+    if (!moving) v *= std::exp(-P.idleDamping * dt);
+
+    ball.tf.vel = v;
 }
